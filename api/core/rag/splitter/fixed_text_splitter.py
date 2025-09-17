@@ -56,18 +56,42 @@ class FixedRecursiveCharacterTextSplitter(EnhanceRecursiveCharacterTextSplitter)
 
     def split_text(self, text: str) -> list[str]:
         """Split incoming text and return chunks."""
-        if self._fixed_separator:
-            chunks = text.split(self._fixed_separator)
-        else:
-            chunks = [text]
+        if not self._fixed_separator:
+            chunk_length = self._length_function([text])[0] if text else 0
+            if chunk_length <= self._chunk_size:
+                return [text]
 
-        final_chunks = []
-        chunks_lengths = self._length_function(chunks)
-        for chunk, chunk_length in zip(chunks, chunks_lengths):
-            if chunk_length > self._chunk_size:
-                final_chunks.extend(self.recursive_split_text(chunk))
+            return self.recursive_split_text(text)
+
+        splits = text.split(self._fixed_separator)
+
+        if not splits:
+            return []
+
+        final_chunks: list[str] = []
+        current_splits: list[str] = []
+        current_lengths: list[int] = []
+        separator_for_merge = self._fixed_separator if self._keep_separator else ""
+        splits_lengths = self._length_function(splits)
+
+        for split, split_length in zip(splits, splits_lengths):
+            if split_length > self._chunk_size:
+                if current_splits:
+                    final_chunks.extend(
+                        self._merge_splits(current_splits, separator_for_merge, current_lengths)
+                    )
+                    current_splits = []
+                    current_lengths = []
+
+                final_chunks.extend(self.recursive_split_text(split))
             else:
-                final_chunks.append(chunk)
+                current_splits.append(split)
+                current_lengths.append(split_length)
+
+        if current_splits:
+            final_chunks.extend(
+                self._merge_splits(current_splits, separator_for_merge, current_lengths)
+            )
 
         return final_chunks
 
